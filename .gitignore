@@ -1,0 +1,22 @@
+# build
+/target/
+/dist/
+**/*.rs.bk
+
+# secrets
+.env
+.env.*
+!.env.example
+
+# editors / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# local data
+/data/
+*.log
+
+# tooling
+.playwright-mcp/

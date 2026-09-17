@@ -1,0 +1,10 @@
+target
+dist
+.git
+.env
+.env.*
+*.md
+.idea
+.vscode
+.DS_Store
+.playwright-mcp
