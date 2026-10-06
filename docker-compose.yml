@@ -1,0 +1,71 @@
+# docker compose up -d --build   -> db + app
+
+name: rusty-hook
+
+services:
+  db:
+    image: postgres:18.6-alpine3.24
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+    volumes:
+      # pg18+ keeps data under /var/lib/postgresql/<major>
+      - pgdata:/var/lib/postgresql
+      - ./init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    shm_size: 128mb
+    security_opt: ["no-new-privileges:true"]
+    networks: [backend]
+
+  app:
+    build: .
+    image: ${APP_IMAGE:-rusty-hook:latest}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    # Explicit list: only what the app needs (no stray secrets).
+    environment:
+      AUTH_MODE: ${AUTH_MODE:-key}
+      ADMIN_KEY: ${ADMIN_KEY:-}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-24}
+      PUBLIC_HOSTS: ${PUBLIC_HOSTS:-}
+      TRUST_FORWARDED: ${TRUST_FORWARDED:-false}
+      RUST_LOG: ${RUST_LOG:-info}
+      MAX_BODY_BYTES: ${MAX_BODY_BYTES:-1048576}
+      MAX_REQUESTS_PER_ENDPOINT: ${MAX_REQUESTS_PER_ENDPOINT:-500}
+      MAX_ENDPOINTS: ${MAX_ENDPOINTS:-100}
+      MAX_CONNECTIONS: ${MAX_CONNECTIONS:-1024}
+      HOOK_CONCURRENCY: ${HOOK_CONCURRENCY:-64}
+      HOOK_RATE_PER_MINUTE: ${HOOK_RATE_PER_MINUTE:-600}
+      RETENTION_DAYS: ${RETENTION_DAYS:-7}
+      PG_HOST: db
+      PG_PORT: "5432"
+      PG_MAX_CONNECTIONS: ${PG_MAX_CONNECTIONS:-16}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "${APP_HOST:-0.0.0.0}:${APP_PORT:-8080}:8080"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 512m
+    pids_limit: 256
+    networks: [backend, frontend]
+
+volumes:
+  pgdata:
+
+networks:
+  # No external access: only app reaches the database.
+  backend:
+    internal: true
+  frontend:
