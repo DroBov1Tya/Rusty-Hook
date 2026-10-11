@@ -6,7 +6,7 @@ use shared::RequestSummary;
 use sqlx::PgPool;
 use tokio::sync::{broadcast, watch};
 
-use crate::{config::Config, limits::Limits};
+use crate::{config::Config, limits::Limits, oidc::Oidc};
 
 const HUB_CAPACITY: usize = 1024;
 
@@ -18,15 +18,18 @@ pub struct AppState {
     pub hook_db: PgPool,
     pub cfg: Arc<Config>,
     pub limits: Arc<Limits>,
+    /// SSO; None when OIDC is not configured.
+    pub oidc: Option<Arc<Oidc>>,
     pub hub: broadcast::Sender<RequestSummary>,
     /// Flips once on shutdown so SSE streams end and the server can drain.
     pub shutdown: watch::Receiver<bool>,
 }
 
 impl AppState {
-    pub fn new(db: PgPool, hook_db: PgPool, cfg: Config, shutdown: watch::Receiver<bool>) -> Self {
+    pub fn new(db: PgPool, hook_db: PgPool, cfg: Config, shutdown: watch::Receiver<bool>) -> Result<Self, String> {
         let (hub, _) = broadcast::channel(HUB_CAPACITY);
         let limits = Arc::new(Limits::new(cfg.hook_rate_per_minute));
-        Self { db, hook_db, cfg: Arc::new(cfg), limits, hub, shutdown }
+        let oidc = cfg.oidc.clone().map(Oidc::new).transpose()?.map(Arc::new);
+        Ok(Self { db, hook_db, cfg: Arc::new(cfg), limits, oidc, hub, shutdown })
     }
 }

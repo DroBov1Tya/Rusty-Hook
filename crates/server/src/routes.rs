@@ -18,7 +18,7 @@ use tower_http::{
     trace::TraceLayer,
 };
 
-use crate::{api, auth, hook, state::AppState};
+use crate::{api, auth, hook, oidc, state::AppState};
 
 const API_BODY_LIMIT: usize = 128 * 1024;
 const API_TIMEOUT: Duration = Duration::from_secs(15);
@@ -47,6 +47,8 @@ pub fn build(st: AppState) -> Router {
         .route("/session", get(auth::session_info))
         .route("/login", post(auth::login))
         .route("/logout", post(auth::logout))
+        .route("/oidc/login", get(oidc::start))
+        .route("/oidc/callback", get(oidc::callback))
         .merge(protected)
         .layer(TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, API_TIMEOUT));
 

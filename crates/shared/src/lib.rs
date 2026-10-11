@@ -127,6 +127,10 @@ pub struct PageQuery {
 pub struct SessionInfo {
     pub auth_required: bool,
     pub authenticated: bool,
+    /// Admin key form is available.
+    pub key_login: bool,
+    /// "Sign in with SSO" is available (GET /api/oidc/login).
+    pub sso_login: bool,
     pub max_body_bytes: usize,
 }
 

@@ -7,6 +7,7 @@ mod error;
 mod health;
 mod hook;
 mod limits;
+mod oidc;
 mod routes;
 mod serve;
 mod state;
@@ -57,12 +58,21 @@ async fn run() -> Result<(), String> {
     let db = connect(&cfg, "rusty_hook_panel").await?;
     let hook_db = connect(&cfg, "rusty_hook_hooks").await?;
     let (stop_tx, stop_rx) = watch::channel(false);
-    let st = AppState::new(db, hook_db, cfg, stop_rx);
-    if st.cfg.admin_key.is_none() {
+    let st = AppState::new(db, hook_db, cfg, stop_rx)?;
+    if !st.cfg.login_required {
         tracing::warn!("AUTH_MODE=open: anyone who reaches this port can use the panel");
         if st.cfg.public_hosts.is_empty() {
             tracing::warn!("PUBLIC_HOSTS is empty: open panel is exposed to DNS rebinding");
         }
+    }
+    if let Some(oidc) = st.oidc.clone() {
+        // Warm the discovery cache; failure is only logged, login retries lazily.
+        tokio::spawn(async move {
+            match oidc.client().await {
+                Ok(_) => tracing::info!("oidc provider discovered"),
+                Err(err) => tracing::warn!(error = %err, "oidc discovery failed, will retry on login"),
+            }
+        });
     }
 
     tokio::spawn(cleanup_loop(st.clone()));
@@ -71,7 +81,9 @@ async fn run() -> Result<(), String> {
     let listener = tokio::net::TcpListener::bind(bind).await.map_err(|e| format!("bind {bind}: {e}"))?;
     tracing::info!(
         %bind,
-        auth = if st.cfg.admin_key.is_some() { "admin_key" } else { "open" },
+        key_login = st.cfg.admin_key.is_some(),
+        sso_login = st.cfg.oidc.is_some(),
+        open = !st.cfg.login_required,
         "listening"
     );
 

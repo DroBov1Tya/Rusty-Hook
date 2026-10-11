@@ -1,4 +1,4 @@
-//! Panel auth: one admin key -> opaque session cookie. Open mode when no key is set.
+//! Panel auth: admin key and/or OIDC SSO -> opaque session cookie. Open mode: no login.
 
 use std::net::SocketAddr;
 
@@ -14,6 +14,7 @@ use shared::{Login, SessionInfo};
 use subtle::ConstantTimeEq;
 
 use crate::{
+    config::Config,
     error::{ApiError, ApiJson, ApiResult},
     hook::client_ip,
     state::AppState,
@@ -22,14 +23,23 @@ use crate::{
 const TOKEN_BYTES: usize = 32;
 /// Base64url length of TOKEN_BYTES, used to reject junk before hitting the DB.
 const TOKEN_LEN: usize = 43;
-/// Cookies never stored with captured hooks (panel and oauth2-proxy sessions).
-const SECRET_COOKIES: [&str; 2] = ["rh_session", "__Host-rh_session"];
+/// Cookies never stored with captured hooks: our session, SSO flow, auth proxies in front.
+const SECRET_COOKIES: [&str; 4] = ["rh_session", "__Host-rh_session", "rh_oidc", "__Host-rh_oidc"];
 const OAUTH2_PROXY_COOKIE_PREFIX: &str = "_oauth2_proxy";
+
+#[derive(Clone, Copy)]
+pub enum SameSite {
+    Strict,
+    /// Needed for cookies read on the cross-site IdP -> callback redirect.
+    Lax,
+}
 
 pub async fn session_info(State(st): State<AppState>, headers: HeaderMap) -> ApiResult<ApiJson<SessionInfo>> {
     Ok(ApiJson(SessionInfo {
-        auth_required: st.cfg.admin_key.is_some(),
+        auth_required: st.cfg.login_required,
         authenticated: is_authenticated(&st, &headers).await?,
+        key_login: st.cfg.admin_key.is_some(),
+        sso_login: st.cfg.oidc.is_some(),
         max_body_bytes: st.cfg.max_body_bytes,
     }))
 }
@@ -41,13 +51,10 @@ pub async fn login(
     ApiJson(body): ApiJson<Login>,
 ) -> ApiResult<Response> {
     let Some(admin_key) = &st.cfg.admin_key else {
-        return Ok(StatusCode::NO_CONTENT.into_response());
+        return Err(ApiError::not_found());
     };
     let ip = client_ip(st.cfg.trust_forwarded, &headers, peer);
-    if st.limits.login.check_key(&ip).is_err() {
-        tracing::warn!(audit = "login_rate_limited", %ip);
-        return Err(ApiError::new(StatusCode::TOO_MANY_REQUESTS, "too many login attempts, retry in a minute"));
-    }
+    check_login_rate(&st, ip)?;
 
     // Hash both sides so the comparison is constant-time and length-independent.
     let given = Sha256::digest(body.key.as_bytes());
@@ -57,20 +64,33 @@ pub async fn login(
         return Err(ApiError::unauthorized());
     }
 
+    let cookie = create_session(&st, key_fingerprint(admin_key)).await?;
+    tracing::info!(audit = "login_ok", method = "key", %ip);
+    Ok((StatusCode::NO_CONTENT, [(header::SET_COOKIE, cookie)]).into_response())
+}
+
+/// Shared per-IP limit for every login entry point (key form and SSO start).
+pub fn check_login_rate(st: &AppState, ip: std::net::IpAddr) -> ApiResult<()> {
+    if st.limits.login.check_key(&ip).is_err() {
+        tracing::warn!(audit = "login_rate_limited", %ip);
+        return Err(ApiError::new(StatusCode::TOO_MANY_REQUESTS, "too many login attempts, retry in a minute"));
+    }
+    Ok(())
+}
+
+/// New session bound to the login method fingerprint; returns its Set-Cookie value.
+pub async fn create_session(st: &AppState, method_fp: Vec<u8>) -> ApiResult<HeaderValue> {
     let token = new_token()?;
     let ttl_secs = i64::try_from(st.cfg.session_ttl.as_secs()).map_err(|_| ApiError::internal())?;
     sqlx::query(
         "INSERT INTO sessions (token_hash, key_fp, expires_at) VALUES ($1, $2, now() + $3 * interval '1 second')",
     )
     .bind(hash_token(&token))
-    .bind(key_fingerprint(admin_key))
+    .bind(method_fp)
     .bind(ttl_secs)
     .execute(&st.db)
     .await?;
-    tracing::info!(audit = "login_ok", %ip);
-
-    let cookie = session_cookie(&st, &token, ttl_secs);
-    Ok((StatusCode::NO_CONTENT, [(header::SET_COOKIE, cookie)]).into_response())
+    Ok(cookie(&st.cfg, st.cfg.session_cookie_name(), &token, ttl_secs, SameSite::Strict))
 }
 
 pub async fn logout(State(st): State<AppState>, headers: HeaderMap) -> ApiResult<Response> {
@@ -78,7 +98,7 @@ pub async fn logout(State(st): State<AppState>, headers: HeaderMap) -> ApiResult
         sqlx::query("DELETE FROM sessions WHERE token_hash = $1").bind(hash_token(token)).execute(&st.db).await?;
         tracing::info!(audit = "logout");
     }
-    let cookie = session_cookie(&st, "", 0);
+    let cookie = cookie(&st.cfg, st.cfg.session_cookie_name(), "", 0, SameSite::Strict);
     Ok((StatusCode::NO_CONTENT, [(header::SET_COOKIE, cookie)]).into_response())
 }
 
@@ -110,22 +130,41 @@ pub async fn allowed_host(State(st): State<AppState>, req: Request, next: Next) 
     }
 }
 
-/// Valid session, or always true in open mode. Keyed to the current ADMIN_KEY,
-/// so rotating the key logs everyone out.
+/// Valid session, or always true in open mode. Sessions are bound to the login method
+/// that issued them: rotating ADMIN_KEY or switching IdP/client logs those users out.
 pub async fn is_authenticated(st: &AppState, headers: &HeaderMap) -> ApiResult<bool> {
-    let Some(admin_key) = &st.cfg.admin_key else {
+    if !st.cfg.login_required {
         return Ok(true);
-    };
+    }
     let Some(token) = session_token(st, headers) else {
         return Ok(false);
     };
     let found: Option<i32> =
-        sqlx::query_scalar("SELECT 1 FROM sessions WHERE token_hash = $1 AND key_fp = $2 AND expires_at > now()")
+        sqlx::query_scalar("SELECT 1 FROM sessions WHERE token_hash = $1 AND key_fp = ANY($2) AND expires_at > now()")
             .bind(hash_token(token))
-            .bind(key_fingerprint(admin_key))
+            .bind(active_fingerprints(&st.cfg))
             .fetch_optional(&st.db)
             .await?;
     Ok(found.is_some())
+}
+
+/// Fingerprint of the SSO setup (issuer + client): sessions die if either changes.
+pub fn oidc_fingerprint(issuer: &str, client_id: &str) -> Vec<u8> {
+    fingerprint(&format!("oidc/{issuer}\n{client_id}"))
+}
+
+fn key_fingerprint(admin_key: &str) -> Vec<u8> {
+    fingerprint(&format!("key/{admin_key}"))
+}
+
+fn fingerprint(input: &str) -> Vec<u8> {
+    Sha256::digest(format!("rusty_hook/session/{input}").as_bytes())[..8].to_vec()
+}
+
+fn active_fingerprints(cfg: &Config) -> Vec<Vec<u8>> {
+    let key = cfg.admin_key.as_deref().map(key_fingerprint);
+    let sso = cfg.oidc.as_ref().map(|o| oidc_fingerprint(&o.issuer, &o.client_id));
+    key.into_iter().chain(sso).collect()
 }
 
 /// True for cookies that must not be persisted with captured requests.
@@ -141,7 +180,10 @@ fn strip_port(host: &str) -> &str {
 }
 
 fn session_token<'a>(st: &AppState, headers: &'a HeaderMap) -> Option<&'a str> {
-    let name = st.cfg.session_cookie_name();
+    read_cookie(headers, st.cfg.session_cookie_name()).filter(|v| v.len() == TOKEN_LEN)
+}
+
+pub fn read_cookie<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
     headers
         .get_all(header::COOKIE)
         .iter()
@@ -150,10 +192,10 @@ fn session_token<'a>(st: &AppState, headers: &'a HeaderMap) -> Option<&'a str> {
         .filter_map(|pair| pair.trim().split_once('='))
         .find(|(k, _)| *k == name)
         .map(|(_, v)| v)
-        .filter(|v| v.len() == TOKEN_LEN)
 }
 
-fn new_token() -> ApiResult<String> {
+/// 256-bit random, base64url.
+pub fn new_token() -> ApiResult<String> {
     let mut buf = [0u8; TOKEN_BYTES];
     getrandom::fill(&mut buf).map_err(|err| {
         tracing::error!(error = %err, "rng failure");
@@ -166,15 +208,14 @@ fn hash_token(token: &str) -> Vec<u8> {
     Sha256::digest(token.as_bytes()).to_vec()
 }
 
-fn key_fingerprint(admin_key: &str) -> Vec<u8> {
-    Sha256::digest(format!("rusty_hook/session-key/{admin_key}").as_bytes())[..8].to_vec()
-}
-
-fn session_cookie(st: &AppState, token: &str, max_age: i64) -> HeaderValue {
-    let secure = if st.cfg.cookie_secure { "; Secure" } else { "" };
-    let name = st.cfg.session_cookie_name();
-    let raw = format!("{name}={token}; Path=/; Max-Age={max_age}; HttpOnly; SameSite=Strict{secure}");
-    // Token is base64url, name is static: always a valid header value.
+/// HttpOnly cookie on Path=/. Name and value are ASCII token chars by construction.
+pub fn cookie(cfg: &Config, name: &str, value: &str, max_age: i64, same_site: SameSite) -> HeaderValue {
+    let secure = if cfg.cookie_secure { "; Secure" } else { "" };
+    let same_site = match same_site {
+        SameSite::Strict => "Strict",
+        SameSite::Lax => "Lax",
+    };
+    let raw = format!("{name}={value}; Path=/; Max-Age={max_age}; HttpOnly; SameSite={same_site}{secure}");
     HeaderValue::from_str(&raw).unwrap_or_else(|_| HeaderValue::from_static(""))
 }
 
