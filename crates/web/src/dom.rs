@@ -27,6 +27,16 @@ pub fn set_hash(id: Option<Uuid>) {
     let _ = window().location().set_hash(&value);
 }
 
+/// True once if the SSO callback bounced back with ?sso_error; also cleans the URL.
+pub fn take_sso_error() -> bool {
+    let location = window().location();
+    let failed = location.search().is_ok_and(|q| q.contains("sso_error"));
+    if failed && let Ok(history) = window().history() {
+        let _ = history.replace_state_with_url(&JsValue::NULL, "", Some("/"));
+    }
+    failed
+}
+
 pub fn confirm(message: &str) -> bool {
     window().confirm_with_message(message).unwrap_or(false)
 }

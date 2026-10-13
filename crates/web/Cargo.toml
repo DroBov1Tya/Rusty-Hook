@@ -23,7 +23,7 @@ web-sys = { version = "0.3.106", features = [
     "Window", "Location", "Navigator", "Clipboard", "Document",
     "EventSource", "MessageEvent", "Event",
     "Request", "RequestInit", "RequestCredentials", "Response", "Headers",
-    "KeyboardEvent", "Element",
+    "KeyboardEvent", "Element", "History",
 ] }
 console_error_panic_hook = "0.1.7"
 

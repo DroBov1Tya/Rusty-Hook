@@ -7,7 +7,7 @@ mod shell;
 
 use leptos::{ev, prelude::*};
 
-use crate::{api, state::Ctx};
+use crate::{api, dom, state::Ctx};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Mode {
@@ -73,7 +73,9 @@ fn Login() -> impl IntoView {
     let ctx = ctx();
     let key = RwSignal::new(String::new());
     let busy = RwSignal::new(false);
-    let error = RwSignal::new(None::<String>);
+    let error = RwSignal::new(dom::take_sso_error().then(|| "SSO sign-in failed or account not allowed".to_owned()));
+    let methods = ctx.session.get_untracked().map_or((false, false), |s| (s.key_login, s.sso_login));
+    let (key_login, sso_login) = methods;
 
     let submit = move |ev: ev::SubmitEvent| {
         ev.prevent_default();
@@ -91,23 +93,38 @@ fn Login() -> impl IntoView {
 
     view! {
         <div class="login">
-            <form class="card login-card" on:submit=submit>
+            <div class="card login-card">
                 <Logo />
                 <h1>"rusty"<span class="accent">"_hook"</span></h1>
-                <p class="muted">"Enter the admin key to open the panel."</p>
-                <input
-                    type="password"
-                    autocomplete="current-password"
-                    placeholder="Admin key"
-                    autofocus
-                    prop:value=move || key.get()
-                    on:input=move |ev| key.set(event_target_value(&ev))
-                />
-                <button class="btn primary" type="submit" disabled=move || busy.get() || key.with(String::is_empty)>
-                    {move || if busy.get() { "Checking..." } else { "Unlock" }}
-                </button>
+                <p class="muted">"Sign in to open the panel."</p>
+                <Show when=move || sso_login>
+                    // Full navigation: the IdP round trip happens outside the app.
+                    <a class="btn primary" href="/api/oidc/login">"Sign in with SSO"</a>
+                </Show>
+                <Show when=move || key_login && sso_login>
+                    <div class="divider muted">"or"</div>
+                </Show>
+                <Show when=move || key_login>
+                    <form class="login-form" on:submit=submit>
+                        <input
+                            type="password"
+                            autocomplete="current-password"
+                            placeholder="Admin key"
+                            autofocus=!sso_login
+                            prop:value=move || key.get()
+                            on:input=move |ev| key.set(event_target_value(&ev))
+                        />
+                        <button
+                            class=if sso_login { "btn" } else { "btn primary" }
+                            type="submit"
+                            disabled=move || busy.get() || key.with(String::is_empty)
+                        >
+                            {move || if busy.get() { "Checking..." } else { "Unlock with key" }}
+                        </button>
+                    </form>
+                </Show>
                 <p class="err">{move || error.get()}</p>
-            </form>
+            </div>
         </div>
     }
 }
