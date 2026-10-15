@@ -32,8 +32,16 @@ services:
         condition: service_healthy
     # Explicit list: only what the app needs (no stray secrets).
     environment:
-      AUTH_MODE: ${AUTH_MODE:-key}
+      AUTH_MODE: ${AUTH_MODE:-login}
       ADMIN_KEY: ${ADMIN_KEY:-}
+      # SSO: any external OIDC provider; empty issuer = disabled.
+      OIDC_ISSUER_URL: ${OIDC_ISSUER_URL:-}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+      OIDC_REDIRECT_URL: ${OIDC_REDIRECT_URL:-}
+      OIDC_ALLOWED_EMAILS: ${OIDC_ALLOWED_EMAILS:-}
+      OIDC_ALLOWED_DOMAINS: ${OIDC_ALLOWED_DOMAINS:-}
+      OIDC_ALLOW_HTTP: ${OIDC_ALLOW_HTTP:-false}
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
       SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-24}
       PUBLIC_HOSTS: ${PUBLIC_HOSTS:-}
