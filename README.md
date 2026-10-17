@@ -70,7 +70,7 @@ crates/server/src/
     server.rs     accept loop (timeouts, connection cap), shutdown signal
     routes.rs     router, security headers, /healthz
     hooks.rs      public hook receiver /h/{id}
-    api.rs        panel REST API + SSE
+    api.rs        panel API: endpoints.rs, requests.rs, stream.rs (SSE) in api/
     auth.rs       sessions, key login, middleware
     auth/oidc.rs  SSO (OIDC)
     error.rs      RFC 9457 errors

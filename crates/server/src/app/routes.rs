@@ -19,7 +19,7 @@ use tower_http::{
 };
 
 use crate::app::{
-    api,
+    api::{endpoints, requests, stream},
     auth::{self, oidc},
     hooks,
     state::AppState,
@@ -37,15 +37,15 @@ const PANEL_CSP: &str = "default-src 'none'; script-src 'self' 'wasm-unsafe-eval
 
 pub fn build(st: AppState) -> Router {
     let protected = Router::new()
-        .route("/endpoints", get(api::list_endpoints).post(api::create_endpoint))
-        .route("/endpoints/{id}", put(api::update_endpoint).delete(api::delete_endpoint))
-        .route("/endpoints/{id}/requests", get(api::list_requests).delete(api::clear_requests))
-        .route("/requests/{id}", get(api::get_request).delete(api::delete_request))
+        .route("/endpoints", get(endpoints::list).post(endpoints::create))
+        .route("/endpoints/{id}", put(endpoints::update).delete(endpoints::delete))
+        .route("/endpoints/{id}/requests", get(requests::list).delete(requests::clear))
+        .route("/requests/{id}", get(requests::get).delete(requests::delete))
         .route_layer(middleware::from_fn_with_state(st.clone(), auth::require_session));
 
     // SSE is long-lived: auth yes, timeout no.
     let stream = Router::new()
-        .route("/stream", get(api::stream))
+        .route("/stream", get(stream::events))
         .route_layer(middleware::from_fn_with_state(st.clone(), auth::require_session));
 
     let short_lived = Router::new()
