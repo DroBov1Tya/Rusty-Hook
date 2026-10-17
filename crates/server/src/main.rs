@@ -1,4 +1,4 @@
-//! rusty_hook: self-hosted webhook inspector. Global init only; the app lives in `app`.
+//! Rusty Hook: self-hosted webhook inspector. Global init only; the app lives in `app`.
 
 mod app;
 mod config;

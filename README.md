@@ -1,4 +1,4 @@
-# rusty_hook
+# Rusty Hook
 
 Self-hosted webhook inspector, an alternative to webhook.site. Point any service at an
 endpoint URL and watch the requests arrive in the browser in real time.
@@ -30,24 +30,6 @@ curl -X POST 'http://localhost:8080/h/<endpoint-id>/any/path?x=1' \
 - Retention: newest `MAX_REQUESTS_PER_ENDPOINT` per endpoint, `RETENTION_DAYS` max age.
 
 ## Architecture
-
-```
-  webhook senders           browser (panel)                  your IdP (optional)
-        |                     |        ^                       ^
-        | ANY /h/{uuid}/*     | /api/* | SSE /api/stream       | OIDC: discovery,
-        v                     v        |                       | token, JWKS
-  +------------------------------------------------------------+---------+
-  | app  (axum, one static binary on scratch, uid 65534, read-only FS)   |
-  |                                                                      |
-  |  hook receiver --insert--> hook pool ---+                            |
-  |        |                                 |                           |
-  |        +--broadcast--> SSE hub           |      panel API --> panel pool
-  |                                          v              |            |
-  |  static files: Leptos WASM panel     Postgres <---------+            |
-  +----------------------------------------------------------------------+
-                                             |
-                               internal network, no published port
-```
 
 | Component | Path | Role |
 | --- | --- | --- |
@@ -126,32 +108,6 @@ short-lived cookie, and `nonce`. The ID token signature, `iss`, `aud` and `exp` 
 verified with the `openidconnect` crate.
 Sessions are bound to the issuer and client, so changing either signs everyone out.
 If the IdP is down, only SSO sign-in fails; hooks keep working.
-
-## Security notes
-
-- Hook responses carry `Content-Security-Policy: sandbox` and `nosniff`, so a user-defined
-  HTML body cannot script the panel origin.
-- Panel: strict CSP without inline scripts, `frame-ancestors 'none'`, HSTS,
-  Fetch Metadata CSRF check, SameSite=Strict HttpOnly session cookie.
-- Only the SHA-256 of session tokens is stored. Rotating `ADMIN_KEY` signs out key sessions.
-- Captured data is rendered as text only; "Copy as curl" shell-quotes every part.
-- Panel session cookies are stripped from captured headers before storage.
-- 10 s header read timeout, connection cap, per-IP rate limits, bounded in-flight hooks,
-  and separate DB pools so a hook flood cannot starve the panel.
-
-## Limitations and honest caveats
-
-- Hook URLs are public by design: the UUID is the capability. Anyone with the URL can post to it.
-- The app connects as the Postgres owner role, not a DML-only role.
-- Per-IP limits are weak against IPv6 address rotation; rate-limit `/h/*` at your proxy or CDN too.
-- TLS is not terminated here. Put Caddy, Traefik or nginx in front and set `COOKIE_SECURE=true`.
-- SSO was verified end to end against Authentik 2026.8.4 and a mock OIDC provider; other
-  vendors should work but were not tested.
-- Single instance: the live feed and pending SSO sign-ins live in process memory.
-- An SSO session lasts `SESSION_TTL_HOURS` even if the user is removed from the allowed group
-  in the IdP meanwhile; lower the TTL or restart with a changed client to cut sessions short.
-- Behind a reverse proxy without `TRUST_FORWARDED=true`, all clients share the proxy IP and
-  therefore one rate-limit bucket.
 
 ## Development
 

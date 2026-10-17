@@ -1,18 +1,18 @@
 # SSO with Authentik
 
-Step-by-step setup of rusty_hook sign-in through [Authentik](https://goauthentik.io).
+Step-by-step setup of Rusty Hook sign-in through [Authentik](https://goauthentik.io).
 Checked against Authentik 2026.8.4. Other OIDC providers work the same way; only the
 IdP-side screens differ.
 
 Access is granted by **Authentik group**. This matters: since Authentik 2025.10 the
-`email_verified` claim defaults to `false`, and rusty_hook only trusts emails the IdP
+`email_verified` claim defaults to `false`, and Rusty Hook only trusts emails the IdP
 marks as verified. Groups are managed by admins, so they are the reliable signal.
 
 ## What you need
 
-- Authentik reachable over HTTPS from the browser **and** from the rusty_hook container,
+- Authentik reachable over HTTPS from the browser **and** from the Rusty Hook container,
   under the same hostname (example below: `https://auth.example.com`).
-- The public URL of rusty_hook (example: `https://hooks.example.com`).
+- The public URL of Rusty Hook (example: `https://hooks.example.com`).
 
 ## 1. Group
 
@@ -29,7 +29,7 @@ Application:
 
 | Field | Value |
 | --- | --- |
-| Name | `rusty_hook` |
+| Name | `Rusty Hook` |
 | Slug | `rusty-hook` (becomes part of the issuer URL) |
 
 Provider type: **OAuth2/OpenID Provider**. Provider settings:
@@ -46,9 +46,9 @@ Provider type: **OAuth2/OpenID Provider**. Provider settings:
 
 Recommended, defense in depth: on the application page -> **Policy / Group / User
 Bindings -> Bind existing group** -> `rusty-hook-users`. Then Authentik itself refuses
-everyone else before they reach rusty_hook.
+everyone else before they reach Rusty Hook.
 
-## 3. rusty_hook configuration
+## 3. Rusty Hook configuration
 
 In `.env`:
 
@@ -71,7 +71,7 @@ Keep `ADMIN_KEY` set if you want a fallback login, or clear it for SSO only.
 
 ### Authentik behind a private or self-signed CA
 
-Give rusty_hook the CA certificate (PEM). Create `docker-compose.override.yml` next to
+Give Rusty Hook the CA certificate (PEM). Create `docker-compose.override.yml` next to
 `docker-compose.yml` (compose picks it up automatically):
 
 ```yaml
