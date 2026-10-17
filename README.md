@@ -66,7 +66,9 @@ curl -X POST 'http://localhost:8080/h/<endpoint-id>/any/path?x=1' \
 | `OIDC_ISSUER_URL` | empty | SSO issuer; empty disables SSO |
 | `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` | - | Client registered at the IdP |
 | `OIDC_REDIRECT_URL` | - | Exactly `https://<host>/api/oidc/callback`, as registered |
-| `OIDC_ALLOWED_EMAILS` / `OIDC_ALLOWED_DOMAINS` | - | Allowlist, at least one required, exact match |
+| `OIDC_ALLOWED_GROUPS` | - | IdP groups (`groups` claim) allowed in; recommended |
+| `OIDC_ALLOWED_EMAILS` / `OIDC_ALLOWED_DOMAINS` | - | Exact match, only for emails the IdP marks verified |
+| `OIDC_CA_FILE` | empty | Extra PEM root for an IdP behind a private CA |
 | `OIDC_ALLOW_HTTP` | `false` | Allow `http://` issuer and redirect (local test IdPs only) |
 | `COOKIE_SECURE` | `true` | `__Host-` Secure cookies; set `false` only for plain http |
 | `SESSION_TTL_HOURS` | `24` | Session lifetime |
@@ -87,15 +89,19 @@ curl -X POST 'http://localhost:8080/h/<endpoint-id>/any/path?x=1' \
 Works with any OpenID Connect provider: Keycloak, Authentik, Zitadel, Google, Entra ID,
 GitLab and others. Nothing extra runs in this stack.
 
+Step-by-step guide for Authentik: [docs/sso-authentik.md](docs/sso-authentik.md).
+
 1. At the IdP, create a confidential client with redirect URI
    `https://<your-host>/api/oidc/callback` and scopes `openid email profile`.
-2. Fill `OIDC_*` in `.env`, including `OIDC_ALLOWED_DOMAINS` or `OIDC_ALLOWED_EMAILS`.
+2. Fill `OIDC_*` in `.env` and at least one allowlist. Prefer `OIDC_ALLOWED_GROUPS`:
+   groups are admin-managed, while emails count only with `email_verified=true`
+   (Authentik 2025.10+ sends `false` by default).
 3. `docker compose up -d`. The login page shows "Sign in with SSO"; the key form stays
    available if `ADMIN_KEY` is set.
 
 The flow is authorization code with PKCE (S256), `state` bound to the browser by a
 short-lived cookie, and `nonce`. The ID token signature, `iss`, `aud` and `exp` are
-verified with the `openidconnect` crate. Accounts with `email_verified=false` are refused.
+verified with the `openidconnect` crate.
 Sessions are bound to the issuer and client, so changing either signs everyone out.
 If the IdP is down, only SSO sign-in fails; hooks keep working.
 
@@ -117,10 +123,13 @@ If the IdP is down, only SSO sign-in fails; hooks keep working.
 - The app connects as the Postgres owner role, not a DML-only role.
 - Per-IP limits are weak against IPv6 address rotation; rate-limit `/h/*` at your proxy or CDN too.
 - TLS is not terminated here. Put Caddy, Traefik or nginx in front and set `COOKIE_SECURE=true`.
-- The SSO client trusts the public web PKI roots bundled in the binary. An IdP behind a private
-  CA is not supported yet.
-- SSO was verified against a mock OIDC provider, not against every vendor.
+- SSO was verified end to end against Authentik 2026.8.4 and a mock OIDC provider; other
+  vendors should work but were not tested.
 - Single instance: the live feed and pending SSO sign-ins live in process memory.
+- An SSO session lasts `SESSION_TTL_HOURS` even if the user is removed from the allowed group
+  in the IdP meanwhile; lower the TTL or restart with a changed client to cut sessions short.
+- Behind a reverse proxy without `TRUST_FORWARDED=true`, all clients share the proxy IP and
+  therefore one rate-limit bucket.
 
 ## Development
 
