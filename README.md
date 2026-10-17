@@ -56,6 +56,28 @@ curl -X POST 'http://localhost:8080/h/<endpoint-id>/any/path?x=1' \
 | `web` | `crates/web` | Leptos CSR panel built to wasm; `static/` holds html and css |
 | schema | `init/init.sql` | Tables and constraints, applied on the first start of an empty volume |
 
+Server layout: `main.rs` does global init only (allocator, logger, runtime) and hands over to
+`app.rs`, which builds and runs the application; everything else hangs off `app/`:
+
+```
+crates/server/src/
+  main.rs         global init -> app::Application::build(cfg)?.run()
+  config.rs       env config + logger
+  app.rs          Application: build() / run(), startup and shutdown
+  app/
+    storage.rs    Postgres pools, retention cleanup
+    state.rs      shared AppState
+    server.rs     accept loop (timeouts, connection cap), shutdown signal
+    routes.rs     router, security headers, /healthz
+    hooks.rs      public hook receiver /h/{id}
+    api.rs        panel REST API + SSE
+    auth.rs       sessions, key login, middleware
+    auth/oidc.rs  SSO (OIDC)
+    error.rs      RFC 9457 errors
+    limits.rs     rate limits
+    health.rs     `rusty-hook healthcheck` for Docker
+```
+
 ## Configuration (.env)
 
 | Variable | Default | Meaning |

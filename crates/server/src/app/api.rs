@@ -20,7 +20,7 @@ use sqlx::{FromRow, types::Json};
 use tokio_stream::wrappers::BroadcastStream;
 use uuid::Uuid;
 
-use crate::{
+use crate::app::{
     auth,
     error::{ApiError, ApiJson, ApiPath, ApiQuery, ApiResult},
     state::AppState,

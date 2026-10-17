@@ -18,7 +18,12 @@ use tower_http::{
     trace::TraceLayer,
 };
 
-use crate::{api, auth, hook, oidc, state::AppState};
+use crate::app::{
+    api,
+    auth::{self, oidc},
+    hooks,
+    state::AppState,
+};
 
 const API_BODY_LIMIT: usize = 128 * 1024;
 const API_TIMEOUT: Duration = Duration::from_secs(15);
@@ -79,13 +84,13 @@ pub fn build(st: AppState) -> Router {
         .layer(middleware::from_fn_with_state(st.clone(), auth::allowed_host));
 
     let hooks = Router::new()
-        .route("/h/{id}", any(hook::capture))
-        .route("/h/{id}/{*rest}", any(hook::capture))
+        .route("/h/{id}", any(hooks::capture))
+        .route("/h/{id}/{*rest}", any(hooks::capture))
         // Inner to outer: body cap, bounded in-flight hooks (bounds body memory), timeout, per-IP rate.
         .layer(DefaultBodyLimit::max(st.cfg.max_body_bytes))
         .layer(GlobalConcurrencyLimitLayer::new(st.cfg.hook_concurrency))
         .layer(TimeoutLayer::with_status_code(StatusCode::GATEWAY_TIMEOUT, HOOK_TIMEOUT))
-        .layer(middleware::from_fn_with_state(st.clone(), hook::rate_limit));
+        .layer(middleware::from_fn_with_state(st.clone(), hooks::rate_limit));
 
     let request_id = HeaderName::from_static("x-request-id");
     Router::new()

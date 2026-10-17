@@ -27,11 +27,13 @@ use serde::{Deserialize, Serialize};
 use subtle::ConstantTimeEq;
 
 use crate::{
-    auth::{SameSite, cookie, create_session, oidc_fingerprint, read_cookie},
+    app::{
+        auth::{SameSite, cookie, create_session, oidc_fingerprint, read_cookie},
+        error::{ApiError, ApiResult},
+        hooks::client_ip,
+        state::AppState,
+    },
     config::OidcConfig,
-    error::{ApiError, ApiResult},
-    hook::client_ip,
-    state::AppState,
 };
 
 /// Non-standard `groups` claim (Authentik, Keycloak with a groups mapper, ...).

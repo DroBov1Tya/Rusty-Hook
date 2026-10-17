@@ -1,5 +1,5 @@
-//! HTTP accept loop. Replaces `axum::serve` to get a header-read timeout (slowloris)
-//! and a hard cap on open connections.
+//! HTTP accept loop and shutdown signal. Replaces `axum::serve` to get a header-read
+//! timeout (slowloris) and a hard cap on open connections.
 
 use std::{future::Future, net::SocketAddr, sync::Arc, time::Duration};
 
@@ -61,4 +61,27 @@ pub async fn run(listener: TcpListener, app: Router, max_connections: usize, shu
     if tokio::time::timeout(DRAIN_TIMEOUT, graceful.shutdown()).await.is_err() {
         tracing::warn!("drain timed out, closing remaining connections");
     }
+}
+
+/// Resolves on Ctrl+C or SIGTERM (docker stop).
+pub async fn shutdown_signal() {
+    let ctrl_c = async {
+        let _ = tokio::signal::ctrl_c().await;
+    };
+    #[cfg(unix)]
+    let term = async {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut s) => {
+                s.recv().await;
+            }
+            Err(_) => std::future::pending::<()>().await,
+        }
+    };
+    #[cfg(not(unix))]
+    let term = std::future::pending::<()>();
+    tokio::select! {
+        () = ctrl_c => {},
+        () = term => {},
+    }
+    tracing::info!("shutting down");
 }
