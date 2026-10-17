@@ -6,7 +6,10 @@ use shared::RequestSummary;
 use sqlx::PgPool;
 use tokio::sync::{broadcast, watch};
 
-use crate::{config::Config, limits::Limits, oidc::Oidc};
+use crate::{
+    app::{auth::oidc::Oidc, limits::Limits},
+    config::Config,
+};
 
 const HUB_CAPACITY: usize = 1024;
 

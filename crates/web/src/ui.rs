@@ -95,7 +95,7 @@ fn Login() -> impl IntoView {
         <div class="login">
             <div class="card login-card">
                 <Logo />
-                <h1>"rusty"<span class="accent">"_hook"</span></h1>
+                <h1>"Rusty"<span class="accent">" Hook"</span></h1>
                 <p class="muted">"Sign in to open the panel."</p>
                 <Show when=move || sso_login>
                     // Full navigation: the IdP round trip happens outside the app.

@@ -13,11 +13,15 @@ use sha2::{Digest, Sha256};
 use shared::{Login, SessionInfo};
 use subtle::ConstantTimeEq;
 
+pub mod oidc;
+
 use crate::{
+    app::{
+        error::{ApiError, ApiJson, ApiResult},
+        hooks::client_ip,
+        state::AppState,
+    },
     config::Config,
-    error::{ApiError, ApiJson, ApiResult},
-    hook::client_ip,
-    state::AppState,
 };
 
 const TOKEN_BYTES: usize = 32;

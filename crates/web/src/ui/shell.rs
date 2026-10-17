@@ -60,7 +60,7 @@ fn Topbar() -> impl IntoView {
         <header class="top">
             <div class="brand">
                 <Logo />
-                <span class="brand-name">"rusty"<span class="accent">"_hook"</span></span>
+                <span class="brand-name">"Rusty"<span class="accent">" Hook"</span></span>
             </div>
             <div class="spacer"></div>
             <div class="live" class:on=move || ctx.live.get() title="Live stream status">

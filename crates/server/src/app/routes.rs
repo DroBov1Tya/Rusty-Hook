@@ -18,7 +18,12 @@ use tower_http::{
     trace::TraceLayer,
 };
 
-use crate::{api, auth, hook, oidc, state::AppState};
+use crate::app::{
+    api::{endpoints, requests, stream},
+    auth::{self, oidc},
+    hooks,
+    state::AppState,
+};
 
 const API_BODY_LIMIT: usize = 128 * 1024;
 const API_TIMEOUT: Duration = Duration::from_secs(15);
@@ -32,15 +37,15 @@ const PANEL_CSP: &str = "default-src 'none'; script-src 'self' 'wasm-unsafe-eval
 
 pub fn build(st: AppState) -> Router {
     let protected = Router::new()
-        .route("/endpoints", get(api::list_endpoints).post(api::create_endpoint))
-        .route("/endpoints/{id}", put(api::update_endpoint).delete(api::delete_endpoint))
-        .route("/endpoints/{id}/requests", get(api::list_requests).delete(api::clear_requests))
-        .route("/requests/{id}", get(api::get_request).delete(api::delete_request))
+        .route("/endpoints", get(endpoints::list).post(endpoints::create))
+        .route("/endpoints/{id}", put(endpoints::update).delete(endpoints::delete))
+        .route("/endpoints/{id}/requests", get(requests::list).delete(requests::clear))
+        .route("/requests/{id}", get(requests::get).delete(requests::delete))
         .route_layer(middleware::from_fn_with_state(st.clone(), auth::require_session));
 
     // SSE is long-lived: auth yes, timeout no.
     let stream = Router::new()
-        .route("/stream", get(api::stream))
+        .route("/stream", get(stream::events))
         .route_layer(middleware::from_fn_with_state(st.clone(), auth::require_session));
 
     let short_lived = Router::new()
@@ -79,13 +84,13 @@ pub fn build(st: AppState) -> Router {
         .layer(middleware::from_fn_with_state(st.clone(), auth::allowed_host));
 
     let hooks = Router::new()
-        .route("/h/{id}", any(hook::capture))
-        .route("/h/{id}/{*rest}", any(hook::capture))
+        .route("/h/{id}", any(hooks::capture))
+        .route("/h/{id}/{*rest}", any(hooks::capture))
         // Inner to outer: body cap, bounded in-flight hooks (bounds body memory), timeout, per-IP rate.
         .layer(DefaultBodyLimit::max(st.cfg.max_body_bytes))
         .layer(GlobalConcurrencyLimitLayer::new(st.cfg.hook_concurrency))
         .layer(TimeoutLayer::with_status_code(StatusCode::GATEWAY_TIMEOUT, HOOK_TIMEOUT))
-        .layer(middleware::from_fn_with_state(st.clone(), hook::rate_limit));
+        .layer(middleware::from_fn_with_state(st.clone(), hooks::rate_limit));
 
     let request_id = HeaderName::from_static("x-request-id");
     Router::new()

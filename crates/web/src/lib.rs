@@ -1,4 +1,4 @@
-//! rusty_hook panel (Leptos CSR).
+//! Rusty Hook panel (Leptos CSR).
 
 mod api;
 mod dom;

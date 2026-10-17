@@ -16,7 +16,7 @@ use shared::RequestSummary;
 use sqlx::{FromRow, types::Json};
 use uuid::Uuid;
 
-use crate::{auth::is_secret_cookie, state::AppState};
+use crate::app::{auth::is_secret_cookie, state::AppState};
 
 const MAX_METHOD_LEN: usize = 32;
 

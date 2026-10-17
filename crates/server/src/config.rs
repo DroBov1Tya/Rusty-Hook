@@ -1,6 +1,18 @@
-//! Runtime config from env. Fails fast on bad values.
+//! Logger and runtime config from env. Fails fast on bad values.
 
 use std::{env, net::SocketAddr, num::NonZeroU32, path::PathBuf, str::FromStr, time::Duration};
+
+use tracing_subscriber::EnvFilter;
+
+/// Global logger. RUST_LOG overrides the default `info`.
+pub fn init_logger() {
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+        .with_target(false)
+        // Plain text in docker logs, colors only on a real terminal.
+        .with_ansi(std::io::IsTerminal::is_terminal(&std::io::stdout()))
+        .init();
+}
 
 const MIN_ADMIN_KEY_LEN: usize = 16;
 

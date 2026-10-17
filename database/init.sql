@@ -1,4 +1,4 @@
--- rusty_hook schema. Runs once on an empty volume (docker-entrypoint-initdb.d).
+-- Rusty Hook schema. Runs once on an empty volume (docker-entrypoint-initdb.d).
 
 BEGIN;
 
