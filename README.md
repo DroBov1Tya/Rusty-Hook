@@ -36,7 +36,7 @@ curl -X POST 'http://localhost:8080/h/<endpoint-id>/any/path?x=1' \
 | `shared` | `crates/shared` | API types and validation, compiled into both server and wasm |
 | `server` | `crates/server` | Hook receiver, panel API, SSE, auth (key + OIDC), static files |
 | `web` | `crates/web` | Leptos CSR panel built to wasm; `static/` holds html and css |
-| schema | `init/init.sql` | Tables and constraints, applied on the first start of an empty volume |
+| schema | `database/init.sql` | Tables and constraints, applied on the first start of an empty volume |
 
 Server layout: `main.rs` does global init only (allocator, logger, runtime) and hands over to
 `app.rs`, which builds and runs the application; everything else hangs off `app/`:
@@ -92,8 +92,6 @@ crates/server/src/
 
 Works with any OpenID Connect provider: Keycloak, Authentik, Zitadel, Google, Entra ID,
 GitLab and others. Nothing extra runs in this stack.
-
-Step-by-step guide for Authentik: [docs/sso-authentik.md](docs/sso-authentik.md).
 
 1. At the IdP, create a confidential client with redirect URI
    `https://<your-host>/api/oidc/callback` and scopes `openid email profile`.
