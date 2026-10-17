@@ -36,9 +36,13 @@ pub struct OidcConfig {
     pub client_secret: Option<String>,
     /// Exact callback URL registered at the IdP: https://<host>/api/oidc/callback
     pub redirect_url: String,
-    /// Deny by default: a user must match one of these.
+    /// Deny by default: a user must match one of these. Emails/domains need email_verified=true.
     pub allowed_emails: Vec<String>,
     pub allowed_domains: Vec<String>,
+    /// Matched against the `groups` claim, case-insensitive.
+    pub allowed_groups: Vec<String>,
+    /// Extra PEM roots for an IdP behind a private CA.
+    pub ca_file: Option<PathBuf>,
 }
 
 #[derive(Clone)]
@@ -140,9 +144,11 @@ fn oidc() -> Result<Option<OidcConfig>, String> {
         redirect_url: secure_url("OIDC_REDIRECT_URL", required("OIDC_REDIRECT_URL")?, allow_http)?,
         allowed_emails: list("OIDC_ALLOWED_EMAILS"),
         allowed_domains: list("OIDC_ALLOWED_DOMAINS"),
+        allowed_groups: list("OIDC_ALLOWED_GROUPS"),
+        ca_file: env::var("OIDC_CA_FILE").ok().filter(|p| !p.is_empty()).map(PathBuf::from),
     };
-    if cfg.allowed_emails.is_empty() && cfg.allowed_domains.is_empty() {
-        return Err("set OIDC_ALLOWED_EMAILS and/or OIDC_ALLOWED_DOMAINS (deny by default)".into());
+    if cfg.allowed_emails.is_empty() && cfg.allowed_domains.is_empty() && cfg.allowed_groups.is_empty() {
+        return Err("set OIDC_ALLOWED_GROUPS, OIDC_ALLOWED_EMAILS or OIDC_ALLOWED_DOMAINS (deny by default)".into());
     }
     Ok(Some(cfg))
 }

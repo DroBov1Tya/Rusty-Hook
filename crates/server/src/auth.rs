@@ -69,8 +69,8 @@ pub async fn login(
     Ok((StatusCode::NO_CONTENT, [(header::SET_COOKIE, cookie)]).into_response())
 }
 
-/// Shared per-IP limit for every login entry point (key form and SSO start).
-pub fn check_login_rate(st: &AppState, ip: std::net::IpAddr) -> ApiResult<()> {
+/// Per-IP limit for key logins.
+fn check_login_rate(st: &AppState, ip: std::net::IpAddr) -> ApiResult<()> {
     if st.limits.login.check_key(&ip).is_err() {
         tracing::warn!(audit = "login_rate_limited", %ip);
         return Err(ApiError::new(StatusCode::TOO_MANY_REQUESTS, "too many login attempts, retry in a minute"));

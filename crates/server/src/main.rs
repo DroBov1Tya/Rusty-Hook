@@ -68,7 +68,7 @@ async fn run() -> Result<(), String> {
     if let Some(oidc) = st.oidc.clone() {
         // Warm the discovery cache; failure is only logged, login retries lazily.
         tokio::spawn(async move {
-            match oidc.client().await {
+            match oidc.warm_up().await {
                 Ok(_) => tracing::info!("oidc provider discovered"),
                 Err(err) => tracing::warn!(error = %err, "oidc discovery failed, will retry on login"),
             }
