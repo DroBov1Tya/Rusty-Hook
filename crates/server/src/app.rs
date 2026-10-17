@@ -29,7 +29,7 @@ impl Application {
         let db = storage::connect(&cfg, "rusty_hook_panel").await?;
         let hook_db = storage::connect(&cfg, "rusty_hook_hooks").await?;
         let (stop, stop_rx) = watch::channel(false);
-        let state = AppState::new(db, hook_db, cfg, stop_rx)?;
+        let state = AppState::new(db, hook_db, cfg, stop_rx).await?;
         warn_if_open(&state.cfg);
 
         let bind = state.cfg.bind;

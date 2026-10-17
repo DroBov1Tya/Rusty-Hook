@@ -105,20 +105,32 @@ struct Cache {
 pub struct Oidc {
     cfg: OidcConfig,
     http: reqwest::Client,
+    /// Async mutex: held across the discovery request.
     cache: tokio::sync::Mutex<Cache>,
+    /// Sync mutex on purpose: tiny critical sections, never held across `.await`.
     flows: Mutex<HashMap<String, Flow>>,
 }
 
 impl Oidc {
-    pub fn new(cfg: OidcConfig) -> Result<Self, String> {
+    /// Reads OIDC_CA_FILE (async) and builds the client.
+    pub async fn from_config(cfg: OidcConfig) -> Result<Self, String> {
+        let ca_pem = match &cfg.ca_file {
+            Some(path) => {
+                Some(tokio::fs::read(path).await.map_err(|e| format!("OIDC_CA_FILE {}: {e}", path.display()))?)
+            }
+            None => None,
+        };
+        Self::new(cfg, ca_pem.as_deref())
+    }
+
+    /// No I/O here; `ca_pem` holds extra roots for an IdP behind a private CA.
+    fn new(cfg: OidcConfig, ca_pem: Option<&[u8]>) -> Result<Self, String> {
         let mut builder = reqwest::Client::builder()
             // No redirects: the IdP endpoints must answer directly (SSRF guard).
             .redirect(reqwest::redirect::Policy::none())
             .timeout(HTTP_TIMEOUT);
-        // Self-hosted IdP behind a private CA: trust it in addition to public roots.
-        if let Some(path) = &cfg.ca_file {
-            let pem = std::fs::read(path).map_err(|e| format!("OIDC_CA_FILE {}: {e}", path.display()))?;
-            let certs = reqwest::Certificate::from_pem_bundle(&pem).map_err(|e| format!("OIDC_CA_FILE: {e}"))?;
+        if let Some(pem) = ca_pem {
+            let certs = reqwest::Certificate::from_pem_bundle(pem).map_err(|e| format!("OIDC_CA_FILE: {e}"))?;
             if certs.is_empty() {
                 return Err("OIDC_CA_FILE has no certificates".into());
             }
@@ -361,16 +373,19 @@ mod tests {
 
     fn oidc(emails: &[&str], domains: &[&str], groups: &[&str]) -> Option<Oidc> {
         let own = |v: &[&str]| v.iter().map(|s| (*s).to_owned()).collect();
-        Oidc::new(OidcConfig {
-            issuer: "https://idp.example.com".into(),
-            client_id: "c".into(),
-            client_secret: None,
-            redirect_url: "https://h.example.com/api/oidc/callback".into(),
-            allowed_emails: own(emails),
-            allowed_domains: own(domains),
-            allowed_groups: own(groups),
-            ca_file: None,
-        })
+        Oidc::new(
+            OidcConfig {
+                issuer: "https://idp.example.com".into(),
+                client_id: "c".into(),
+                client_secret: None,
+                redirect_url: "https://h.example.com/api/oidc/callback".into(),
+                allowed_emails: own(emails),
+                allowed_domains: own(domains),
+                allowed_groups: own(groups),
+                ca_file: None,
+            },
+            None,
+        )
         .ok()
     }
 

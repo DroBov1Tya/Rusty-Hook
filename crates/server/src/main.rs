@@ -9,21 +9,15 @@ use std::process::ExitCode;
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-fn main() -> ExitCode {
+#[tokio::main]
+async fn main() -> ExitCode {
     // Docker HEALTHCHECK runs the same binary (scratch image has no curl).
     if std::env::args().nth(1).as_deref() == Some("healthcheck") {
-        return app::healthcheck();
+        return app::healthcheck().await;
     }
-    config::init_logger();
+    let _log = config::init_logger();
 
-    let rt = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
-        Ok(rt) => rt,
-        Err(err) => {
-            tracing::error!("runtime: {err}");
-            return ExitCode::FAILURE;
-        }
-    };
-    match rt.block_on(start()) {
+    match start().await {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
             tracing::error!("fatal: {err}");

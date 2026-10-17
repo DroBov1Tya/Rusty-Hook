@@ -2,16 +2,22 @@
 
 use std::{env, net::SocketAddr, num::NonZeroU32, path::PathBuf, str::FromStr, time::Duration};
 
+use tracing_appender::non_blocking::{NonBlockingBuilder, WorkerGuard};
 use tracing_subscriber::EnvFilter;
 
-/// Global logger. RUST_LOG overrides the default `info`.
-pub fn init_logger() {
+/// Global logger. RUST_LOG overrides the default `info`. A dedicated thread writes to stdout,
+/// so runtime tasks never block on I/O; not lossy, so audit lines are never dropped.
+/// Keep the guard alive until exit: dropping it flushes the queue.
+pub fn init_logger() -> WorkerGuard {
+    let (writer, guard) = NonBlockingBuilder::default().lossy(false).finish(std::io::stdout());
     tracing_subscriber::fmt()
+        .with_writer(writer)
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
         .with_target(false)
         // Plain text in docker logs, colors only on a real terminal.
         .with_ansi(std::io::IsTerminal::is_terminal(&std::io::stdout()))
         .init();
+    guard
 }
 
 const MIN_ADMIN_KEY_LEN: usize = 16;
